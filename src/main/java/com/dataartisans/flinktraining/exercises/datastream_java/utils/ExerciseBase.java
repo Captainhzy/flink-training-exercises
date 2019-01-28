@@ -28,8 +28,10 @@ public class ExerciseBase {
 	public static SinkFunction out = null;
 	public static int parallelism = 4;
 
-	public final static String pathToRideData = "data/nycTaxiRides.gz";
-	public final static String pathToFareData = "data/nycTaxiFares.gz";
+//	public final static String pathToRideData = "data/nycTaxiRides.gz";
+//	public final static String pathToFareData = "data/nycTaxiFares.gz";
+	public final static String pathToRideData = "hdfs://hadoop01:9000/input/nycTaxiRides.gz";
+	public final static String pathToFareData = "hdfs://hadoop01:9000/input/nycTaxiFares.gz";
 
 	public static SourceFunction<TaxiRide> rideSourceOrTest(SourceFunction<TaxiRide> source) {
 		if (rides == null) {

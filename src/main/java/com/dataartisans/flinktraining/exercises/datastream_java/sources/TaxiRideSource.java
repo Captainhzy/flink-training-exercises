@@ -20,12 +20,17 @@ import com.dataartisans.flinktraining.exercises.datastream_java.datatypes.TaxiRi
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.streaming.api.functions.source.SourceFunction;
 import org.apache.flink.streaming.api.watermark.Watermark;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 
 import java.io.BufferedReader;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.util.Calendar;
 import java.util.Comparator;
 import java.util.PriorityQueue;
@@ -107,8 +112,9 @@ public class TaxiRideSource implements SourceFunction<TaxiRide> {
 	@Override
 	public void run(SourceContext<TaxiRide> sourceContext) throws Exception {
 
-		gzipStream = new GZIPInputStream(new FileInputStream(dataFilePath));
-		reader = new BufferedReader(new InputStreamReader(gzipStream, "UTF-8"));
+		gzipStream = new GZIPInputStream(readFileFromHdfs(dataFilePath));
+//		gzipStream = new GZIPInputStream(new FileInputStream(dataFilePath));
+		reader = new BufferedReader(new InputStreamReader(gzipStream, StandardCharsets.UTF_8));
 
 		generateUnorderedStream(sourceContext);
 
@@ -119,6 +125,23 @@ public class TaxiRideSource implements SourceFunction<TaxiRide> {
 
 	}
 
+	private InputStream readFileFromHdfs(String filePath) throws IOException {
+		Configuration conf = new Configuration();
+		Path srcPath = new Path(filePath);
+		FileSystem fs = null;
+		URI uri;
+		try {
+			uri = new URI(filePath);
+			fs = FileSystem.get(uri, conf);
+		} catch (URISyntaxException e) {
+			e.printStackTrace();
+		}
+		InputStream in;
+		in = fs.open(srcPath);
+		return in;
+	}
+
+
 	private void generateUnorderedStream(SourceContext<TaxiRide> sourceContext) throws Exception {
 
 		long servingStartTime = Calendar.getInstance().getTimeInMillis();
@@ -127,12 +150,7 @@ public class TaxiRideSource implements SourceFunction<TaxiRide> {
 		Random rand = new Random(7452);
 		PriorityQueue<Tuple2<Long, Object>> emitSchedule = new PriorityQueue<>(
 				32,
-				new Comparator<Tuple2<Long, Object>>() {
-					@Override
-					public int compare(Tuple2<Long, Object> o1, Tuple2<Long, Object> o2) {
-						return o1.f0.compareTo(o2.f0);
-					}
-				});
+				Comparator.comparing(o -> o.f0));
 
 		// read first ride and insert it into emit schedule
 		String line;
@@ -145,11 +163,11 @@ public class TaxiRideSource implements SourceFunction<TaxiRide> {
 			// get delayed time
 			long delayedEventTime = dataStartTime + getNormalDelayMsecs(rand);
 
-			emitSchedule.add(new Tuple2<Long, Object>(delayedEventTime, ride));
+			emitSchedule.add(new Tuple2<>(delayedEventTime, ride));
 			// schedule next watermark
 			long watermarkTime = dataStartTime + watermarkDelayMSecs;
 			Watermark nextWatermark = new Watermark(watermarkTime - maxDelayMsecs - 1);
-			emitSchedule.add(new Tuple2<Long, Object>(watermarkTime, nextWatermark));
+			emitSchedule.add(new Tuple2<>(watermarkTime, nextWatermark));
 
 		} else {
 			return;
@@ -174,7 +192,7 @@ public class TaxiRideSource implements SourceFunction<TaxiRide> {
 			{
 				// insert event into emit schedule
 				long delayedEventTime = rideEventTime + getNormalDelayMsecs(rand);
-				emitSchedule.add(new Tuple2<Long, Object>(delayedEventTime, ride));
+				emitSchedule.add(new Tuple2<>(delayedEventTime, ride));
 
 				// read next ride
 				if (reader.ready() && (line = reader.readLine()) != null) {
@@ -209,7 +227,7 @@ public class TaxiRideSource implements SourceFunction<TaxiRide> {
 				// schedule next watermark
 				long watermarkTime = delayedEventTime + watermarkDelayMSecs;
 				Watermark nextWatermark = new Watermark(watermarkTime - maxDelayMsecs - 1);
-				emitSchedule.add(new Tuple2<Long, Object>(watermarkTime, nextWatermark));
+				emitSchedule.add(new Tuple2<>(watermarkTime, nextWatermark));
 			}
 		}
 	}
